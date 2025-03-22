@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+from sklearn.linear_model import LinearRegression
+import tabulate  # Import tabulate for table formatting
+
+# Ensure tabulate is installed
+try:
+    import tabulate
+except ImportError:
+    print("⚠️ Missing dependency: 'tabulate'. Install it with:")
+    print("   pip install tabulate")
+    sys.exit(1)
+
+# Check if virtual environment is activated
+if not hasattr(sys, 'real_prefix') and 'VIRTUAL_ENV' not in os.environ:
+    print("\n🚨 Error: Virtual environment is not activated!")
+    print("👉 Run the following command and try again:")
+    print("   source ~/myenv/bin/activate && python predict_stock.py\n")
+    sys.exit(1)
+
+# Function to fetch stock data
+def get_stock_data(stock_symbol, days=365):
+    end_date = datetime.today()
+    start_date = end_date - timedelta(days=days)
+    data = yf.download(stock_symbol, start=start_date, end=end_date)
+    return data
+
+# Function to predict stock prices
+def predict_stock(stock_symbol, days=100):
+    print(f"📊 Fetching stock data for {stock_symbol}...")
+
+    # Fetch stock data
+    stock_data = get_stock_data(stock_symbol)
+
+    if stock_data.empty:
+        print("❌ Error: Could not fetch stock data. Please check the stock symbol.")
+        return
+
+    # Prepare training data
+    stock_data = stock_data.reset_index()  # Ensure date is a column
+    stock_data.loc[:, 'Days'] = np.arange(len(stock_data))  # Convert dates to numerical values
+    
+    X = stock_data[['Days']].values
+    y = stock_data['Close'].values
+
+    # Train a simple Linear Regression model
+    model = LinearRegression()
+    model.fit(X, y)
+
+    # Predict the next N days
+    future_days = np.arange(len(stock_data), len(stock_data) + days).reshape(-1, 1)
+    predictions = model.predict(future_days).flatten()
+
+    # Create a DataFrame with the predictions
+    future_dates = [(datetime.today() + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, days + 1)]
+    prediction_df = pd.DataFrame({'Date': future_dates, 'Predicted Price': predictions})
+
+    # Save predictions to CSV
+    output_file = os.path.expanduser("~/stock_predictions.csv")
+    prediction_df.to_csv(output_file, index=False)
+    print(f"✅ Predictions saved in {output_file}")
+
+    # Display predictions as a table
+    print("\n📅 Stock Price Predictions:")
+    print(tabulate.tabulate(prediction_df, headers='keys', tablefmt='pretty'))
+
+# Main function
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: predict_stock <STOCK_SYMBOL> [DAYS]")
+        sys.exit(1)
+
+    stock_symbol = sys.argv[1]
+    days = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+    predict_stock(stock_symbol, days)
+
